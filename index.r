@@ -1,223 +1,217 @@
 library(tidyverse)
 library(lubridate)
+library(rgl)
 
-years = seq(2012, 2018)
-data = tibble()
+source("./utils.r")
+source("./common_graphs.r")
 
-getSummerData = function(data, year) {
-    summer_start = make_datetime(year, 04, 30, 23)
-    summer_end = make_datetime(year, 09, 30, 23)
-    return(filter(data,
-        summer_start <= date,
-        date <= summer_end
-    ))
-}
+data = get_all_data()
 
-getWinterData = function(data, year) {
-    winter_start = make_datetime(year, 09, 30, 23)
-    winter_end = make_datetime(year + 1, 04, 30, 23)
-    return(filter(data,
-                  winter_start <= date,
-                  date <= winter_end
-    ))
-}
+get_multilinear_reg = function(data, cur_year, cur_month, cur_xname, cur_yname) {
+  cur_data = data
 
-getPeriod = function(date, year) {
-    summer_start = make_datetime(year, 04, 30, 23)
-    summer_end = make_datetime(year, 09, 30, 23)
-
-    if (summer_start <= date & date <= summer_end) {
-        return("summer")
+  if (cur_year != ALL_YEARS) {
+    if (cur_month >= SUMMER) {
+      cur_data = filter(cur_data, season_year == cur_year)
+    } else {
+      cur_data = filter(cur_data, year == cur_year)
     }
-    return("winter")
+  }
+
+  if (cur_month < ALL_MONTHS) {
+    cur_data = filter(cur_data, month == cur_month)
+  } else if (cur_month >= SUMMER) {
+    cur_data = filter(cur_data, season == season_from_month(cur_month))
+  }
+
+  x = unlist(cur_data[cur_xname])
+  conso = pull(cur_data, conso)
+
+  if (cur_yname == "co2_kg") {
+    # convert load from MW to kWh
+    # 1 MW produces 500 kWh during 1/2 hour
+    x = x * 500
+    conso = conso * 500
+  }
+
+  y = unlist(cur_data[cur_yname])
+  reg = lm(y ~ x + conso)
+
+  return(reg)
 }
 
-for (year in years) {
-    year_data = read_delim(paste("data/", year, ".csv", sep=""),
-        delim = ";",
-        col_types = cols(
-            perimetre = col_skip(),
-            nature = col_skip(),
-            date = col_skip(),
-            heure = col_skip(),
-            date_heure = col_datetime(format = "%Y-%m-%dT%H:%M:%S%z"),
-            prevision_j1 = col_skip(),
-            prevision_j = col_skip(),
-            taux_co2 = col_skip(),
-            ech_comm_angleterre = col_integer(),
-            ech_comm_espagne = col_integer(),
-            ech_comm_italie = col_integer(),
-            ech_comm_suisse = col_integer(),
-            ech_comm_allemagne_belgique = col_integer(),
-            fioul_tac = col_skip(),
-            fioul_cogen = col_skip(),
-            fioul_autres = col_skip(),
-            gaz_tac = col_skip(),
-            gaz_cogen = col_skip(),
-            gaz_ccg = col_skip(),
-            gaz_autres = col_skip(),
-            hydraulique_fil_eau_eclusee = col_skip(),
-            hydraulique_lacs = col_skip(),
-            hydraulique_step_turbinage = col_skip(),
-            bioenergies_dechets = col_skip(),
-            bioenergies_biomasse = col_skip(),
-            bioenergies_biogaz = col_skip()
-        )
-    )
-    year_data = filter(year_data, !is.na(consommation))
-    data = bind_rows(data, year_data)
-    # year_data = year_data[!is.na(year_data$consommation),]
-    # data = rbind(data, year_data)
-}
-rm(year_data, year)
-data = rename(data,
-    "date"="date_heure",
-    "conso"="consommation",
-    "oil"="fioul",
-    "coal"="charbon",
-    "gas"="gaz",
-    "nuclear"="nucleaire",
-    "wind"="eolien",
-    "solar"="solaire",
-    "hydro"="hydraulique",
-    "pumped_storage"="pompage",
-    "biomass"="bioenergies",
-    "trade"="ech_physiques",
-    "trade_UK"="ech_comm_angleterre",
-    "trade_SP"="ech_comm_espagne",
-    "trade_IT"="ech_comm_italie",
-    "trade_CH"="ech_comm_suisse",
-    "trade_DE_BE"="ech_comm_allemagne_belgique"
-)
+get_multilinear_results = function(data) {
+    results = tibble(year = -1, month = 0, yname = "", coeff_conso = 0,
+                    xname = "", coeff = 0,
+                    intercept = 0, r2 = 0)
+    months = seq(1, 12)
+    xnames = c("wind", "solar")
+    ynames = c("co2_kg") # "fossil", "nuclear",
+    years = c(years, ALL_YEARS)
+    months = c(months, ALL_MONTHS, SUMMER, WINTER)
 
-data = mutate(data, co2_kg_kwh = (
-    coal * 1.06 +
-    gas * 0.418 +
-    hydro * 0.006 +
-    nuclear * 0.006 +
-    oil * 0.73 +
-    solar * 0.055 +
-    wind * 0.013
-) / (coal + gas + hydro + nuclear + oil + solar + wind))
-data = mutate(data, fossil = coal + oil + gas)
-data = mutate_at(data, vars(solar), ~ pmax(., 0))
-data = mutate(data, new_renewables = wind + solar)
-data = mutate(data, year = year(date))
-data = mutate(data, month = month(date, TRUE, TRUE, locale="en_US"))
-data = mutate(data, period = mapply(getPeriod, date, year))
-
-installed_capacities = read_delim("./data/installed_capacities.csv",
-    delim=";",
-    col_types=cols(
-        "annee"=col_integer()
-    )
-)
-installed_capacities = rename(installed_capacities,
-    "year"="annee",
-    "fossils_capacities"="parc_thermique_fossile",
-    "oil_capacities"="parc_fioul",
-    "coal_capacities"="parc_charbon",
-    "gas_capacities"="parc_gaz",
-    "hydro_capacities"="parc_hydraulique",
-    "nuclear_capacities"="parc_nucleaire",
-    "solar_capacities"="parc_solaire",
-    "wind_capacities"="parc_eolien",
-    "biomass_capacities"="parc_bioenergie"
-)
-
-data = left_join(data, select(installed_capacities, year, solar_capacities, wind_capacities))
-
-data$wind_load_factor = data$wind / data$wind_capacities
-data$solar_load_factor = data$solar / data$solar_capacities
-
-analyse <- function(data, yName, xName, cur_period) {
-    res = c();
-
-    for (year in years) {
-        period_data = filter(data, period = cur_period)
-        if (xName == "solar") {
-            period_data = filter(period_data, solar > 0)
+    for(cur_year in years) {
+      for (cur_month in months) {
+        if (cur_year == ALL_YEARS & cur_month >= ALL_MONTHS) {
+            next
         }
+        for (cur_xname in xnames) {
+          for (cur_yname in ynames) {
+            reg = get_multilinear_reg(data, cur_year, cur_month, cur_xname, cur_yname)
 
-        x = unlist(period_data[xName])
-        y = unlist(period_data[yName])
-        reg = lm(y~x)
-        res = c(res, reg$coefficients[2])
+            cur_r2 = summary(reg)$r.squared
+
+            # add two rows in order to ease later computation
+            results = add_row(results, year=cur_year, month=cur_month,
+                              xname = cur_xname,
+                              yname=cur_yname,
+                              intercept=reg$coefficients[1],
+                              coeff = reg$coefficients[2],
+                              coeff_conso=reg$coefficients[3],
+                              r2 = cur_r2)
+          }
+        }
+      }
     }
-    names(res) = c()
-    return(res)
-}
-results = data.frame(
-    "fossil_wind_summer"=analyse(data, "fossil", "wind", "summer"),
-    "nuclear_wind_summer"=analyse(data, "nuclear", "wind", "summer"),
-    "hydro_wind_summer"=analyse(data, "hydro", "wind", "summer"),
-    "storage_wind_summer"=analyse(data, "pumped_storage", "wind", "summer"),
-    "wind_conso_summer"=analyse(data, "wind", "conso", "summer"),
 
-    "fossil_solar_summer"=analyse(data, "fossil", "solar", "summer"),
-    "nuclear_solar_summer"=analyse(data, "nuclear", "solar", "summer"),
-    "hydro_solar_summer"=analyse(data, "hydro", "solar", "summer"),
-    "storage_solar_summer"=analyse(data, "pumped_storage", "solar", "summer"),
-    "solar_conso_summer"=analyse(data, "solar", "conso", "summer"),
+    results = results %>%
+      filter(year > 0) %>% # remove first empty line
+      arrange(year, month) %>%
+      mutate(month_label = month(month, TRUE, TRUE, locale="en_US")) %>%
+      mutate(date = as.Date(make_datetime(year, month)))
 
-    "fossil_nuclear_summer"=analyse(data, "fossil", "nuclear", "summer"),
-    "fossil_nuclear_summer"=analyse(data, "fossil", "hydro", "summer")
-);
-
-row.names(results) = years
-write.csv(results, "test.txt")
-
-plotSeasonDistrib = function(varname, yName, cur_title) {
-    ggplot(data) +
-        geom_boxplot(mapping = aes(
-            x = month,
-            y = get(varname),
-            ymin = min(get(varname)),
-            ymax = max(get(varname))
-        ),
-        outlier.shape = NA,
-        coef=10
-        ) +
-        scale_y_continuous(limits=c(0, NA)) +
-        labs(
-            x=NULL,
-            y=yName,
-            title=cur_title,
-            subtitle = "Source: RTE"
-        )
-
-    ggsave(paste("./figures/", varname, ".png", sep=""))
+    return(results)
 }
 
-plotSeasonProd = function(varname, yName, cur_title, myColor) {
-    summup = data %>%
-        select(year, varname, month) %>%
-        filter(year==2018) %>%
-        group_by(month, ) %>%
-        summarise(prod = sum(get(varname)) * 0.0005 )
-    
-    ggplot(summup) +
-        geom_col(mapping = aes(x=month, y = prod ), fill = myColor) +
-        scale_y_continuous(limits=c(0, NA)) +
-        labs(
-            x=NULL,
-            y=paste(yName, " (GWh)", sep=""),
-            title=cur_title,
-            subtitle = "Source: RTE"
-        )
-    
-    ggsave(paste("./figures/", varname, ".png", sep=""))
+plot_results_group_by_year = function(results) {
+  d = results %>%
+    filter(month == ALL_MONTHS, year != ALL_YEARS, yname == "co2_kg")
+
+  plot = ggplot(d, aes(x = year, y = coeff)) +
+    geom_path(group=1, alpha = 0.2) +
+    geom_point(mapping = aes(color = r2)) +
+    scale_color_gradient(low = "red", high = "green", limits=c(0,1)) +
+    scale_y_continuous(limits = c(NA, 0)) +
+    facet_grid(rows = vars(xname)) +
+    labs(
+      x = NULL,
+      y = "Avoided emissions (kg CO2eq/kWh)",
+      color = "R²"
+    )
+  ggsave("figures/multilinear_method/impact_by_year.png")
+
+  return(plot)
 }
 
-plotSeasonDistrib("solar_load_factor", "Solar load factor", "Distribution of solar load factor in France (2012 - 2018)")
-plotSeasonDistrib("wind_load_factor", "Wind load factor", "Distribution of wind load factor in France (2012 - 2018)")
-plotSeasonDistrib("fossil", "Fossil load (MW)", "Distribution of fossil load in France (2012 - 2018)")
-plotSeasonDistrib("nuclear", "Nuclear load (MW)", "Distribution of nuclear load in France (2012 - 2018)")
-plotSeasonDistrib("conso", "Consommation (MW)", "Distribution of consommation in France (2012 - 2018)")
+plot_multilinear_reg_group_by_season = function(data, results, cur_xname, withISO = FALSE) {
+  max = 14 * 10^3 # t CO2eq/h
+  min_value = (data %>% select(co2_t_h) %>% min()) / max
+  my_values = c(0, 0.1, 0.2, 0.3, 0.5, 0.7, 1)
+  my_breaks = max * my_values
+  my_levels = my_breaks
+  levels = tibble(level = my_levels)
+  lim = c(0, max)
+  xtitle = ifelse(cur_xname == "solar", "Solar (GW)", "Wind (GW)")
 
-plotSeasonProd("solar", "Solar production", "Solar production in 2018", "orange")
-plotSeasonProd("wind", "Wind production", "Wind production in 2018", "blue")
-plotSeasonProd("fossil", "Fosiil production", "Fossil production in 2018", "grey")
+  a = results %>%
+    filter(year != ALL_YEARS, month >= SUMMER, yname == "co2_kg", xname ==  cur_xname) %>%
+    mutate(season = if_else(month == SUMMER, "summer", "winter")) %>%
+    mutate(season_year = year) %>%
+    crossing(levels) %>%
+    mutate(level2slope = (-coeff)/(coeff_conso)) %>%
+    mutate(level2intercept = ((level- intercept/500)/(1000*coeff_conso)))
 
-ggplot(data, aes(x=solar_load_factor, color = period)) +
-    geom_density()
+  d = filter(data, season_year >= 2012)
+  plot = ggplot(d, aes(x = pull(d, cur_xname) / 1000, y = conso / 1000)) +
+    stat_summary_2d(aes(z = co2_t_h), bins = 40, alpha = 0.9) +
+    scale_fill_gradientn(colours = rainbow(n = 6),
+                         limits = lim,
+                         breaks = my_breaks,
+                         values = my_values,
+    ) +
+    scale_x_continuous(labels = (function(v) { return(as.integer(v)) })) +
+    facet_grid(cols = vars(season_year), rows = vars(season)) +
+    labs(
+      x = xtitle,
+      y = "Consumption (GW)",
+      fill = "GHG Emissions\n(t CO2eq/h)",
+      caption = "Data: RTE 2012 - 2018\nEmission factors (life-cycle analysis) from ADEME\nSummer: May-Sept, Winter: Oct-April"
+    )
+
+  if (withISO) {
+    plot = plot +
+      geom_abline(data = a, na.rm = T, aes(
+        intercept = level2intercept,
+        slope=level2slope,
+        colour=level
+      )) +
+      scale_colour_gradientn(colours = rainbow(n = 6),
+                             limits = lim,
+                             values = my_values,
+                             guide = "none")
+  }
+
+  ggsave(paste("./figures/multilinear_method/multilinear_reg_", cur_xname, "_by_season.png", sep=""),
+         width = unit(11, "cm"), height = unit(5, "cm"))
+
+  return(plot)
+}
+
+# correlation between consumption and emissions
+ggplot(filter(data, year == 2018), aes(x = conso / 1000, y = co2_t_h)) +
+  geom_point(shape=".") +
+  geom_smooth(method = "lm") +
+  facet_wrap(~month_label) +
+  labs(
+    title = "Correlation between consumption and GHG emissions (2018)",
+    x = "Consumption (GW)",
+    y = "GHG emissions (t CO2eq/h)",
+    caption = "Data: RTE 2018\nEmission factors (life-cycle analysis) from ADEME"
+  )
+ggsave("./figures/correlation_consumption_emissions.png", width = unit(9, "cm"))
+
+results = get_multilinear_results(data)
+
+plot_multilinear_reg_group_by_season(data, results, "wind", T)
+plot_multilinear_reg_group_by_season(data, results, "solar", T)
+
+plot_results_by_season(results, "multilinear_method", "wind")
+plot_results_by_season(results, "multilinear_method", "solar")
+
+coeffs = results %>%
+    filter(month >= SUMMER, year != ALL_YEARS, yname == "co2_kg") %>%
+    mutate(season = ifelse(month == SUMMER, "summer", "winter")) %>%
+    select(year, season, xname, coeff) %>%
+    spread(key = xname, value = coeff) %>%
+    rename(coeff_wind=wind, coeff_solar=solar, season_year = year)
+
+
+dataWithCoeff = data %>%
+  filter(season_year >= 2012) %>%
+  left_join(coeffs) %>%
+  mutate(wind_avoided = (-coeff_wind) * wind * 500) %>%
+  mutate(solar_avoided = (-coeff_solar) * solar * 500)
+
+suma = aggregate(dataWithCoeff$solar_avoided, by=list(Category=dataWithCoeff$year), FUN=sum)
+sum(suma$x)/141.7/10^9
+
+map2color <- function(x, pal, limits = range(x)){
+  pal[findInterval(x, seq(limits[1], limits[2], length.out = length(pal) + 1),
+                   all.inside=TRUE)]
+}
+
+d = filter(data, season_year == 2012, season == "winter")
+x = pull(d, wind) / 1000
+y = pull(d, conso) / 1000
+z = pull(d, co2_t_h)
+reg = filter(results, year == 2012, month == WINTER, xname == "wind")
+a = reg$coeff * 1000
+b = reg$coeff_conso * 1000
+c = -1
+d = reg$intercept / 500
+
+plot3d(x, y, z, col = map2color(z, rainbow(n = 6)), xlab = "Wind", ylab = "Consump.", zlab = "GHG")
+planes3d(a, b, c, d, alpha = 0.5)
+movie3d(spin3d(axis = c(0, 0, 1)), duration = 6,
+        dir = getwd())
+

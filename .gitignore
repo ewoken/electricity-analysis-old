@@ -4,5 +4,6 @@
 data
 figures
 .Rhistory
+.RData
 *.Rproj
 
