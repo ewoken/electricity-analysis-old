@@ -14,6 +14,4 @@ curl "https://opendata.reseaux-energies.fr/explore/dataset/parc-prod-par-filiere
 
 rm -f data/*.csv-e
 
-mkdir -p figures/linear_method
 mkdir -p figures/multilinear_method
-mkdir -p figures/season_distrib

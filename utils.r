@@ -158,17 +158,3 @@ get_all_data = function() {
 
   return(data)
 }
-
-compute_avoided_emissions_by_year = function(data, results) {
-  coeffs = results %>%
-    filter(month < SUMMER, year != ALL_YEARS, yname == "co2_kg") %>%
-    select(year, month, coeff, xname)
-
-  res = data %>%
-    gather("solar", "wind", key = "xname", value="prod") %>%
-    left_join(coeffs) %>%
-    group_by(year, xname) %>%
-    summarise(co2_kg = sum(-500 * prod * coeff))
-
-  return(res)
-}

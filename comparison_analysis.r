@@ -1,11 +1,3 @@
-library(tidyverse)
-library(lubridate)
-
-source("./utils.r")
-source("./common_graphs.r")
-
-data = get_all_data()
-
 quartile_splits = c(0, 0.25, 0.5, 0.75, 1.1)
 conso_labels = c("base (Q1)", "offpeak1 (Q2)", "offpeak2 (Q3)", "peak (Q4)")
 wind_labels = c("still\n(Q1)", "windy\n(Q2)", "very windy\n(Q3)", "stormy\n(Q4)")
@@ -73,13 +65,8 @@ ggplot(mean_delta_co2, aes(x = wind_category, y = avoided)) +
   )
 ggsave("./figures/wind_emissions_impact.png", width=unit(9, "cm"))
 
-weighted.mean(mean_delta_co2$avoided, mean_delta_co2$count)
+wind_avoided = weighted.mean(mean_delta_co2$avoided, mean_delta_co2$count)
+print(paste("Estimation 2 for wind: ", wind_avoided, "kg CO2eq/kWh", sep=""))
 
-ggplot(data, aes(x = solar, y = conso)) +
-  geom_point(shape=".") + 
-  geom_smooth(method = "lm") +
-  facet_wrap(~season)
-  
-  
-  
-  
+
+
