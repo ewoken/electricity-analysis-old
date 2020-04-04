@@ -1,5 +1,4 @@
-source("./check_dependencies.r")
-source("./utils.r")
+source("../utils.r")
 source("./common_graphs.r")
 source("./correlation_wind_export.r")
 source("./correlation_consump_emissions.r")

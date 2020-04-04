@@ -1,3 +1,4 @@
+_*
 .DS_Store
 .Rproj.user
 .vscode
@@ -6,4 +7,6 @@ figures
 .Rhistory
 .RData
 *.Rproj
-
+*.png
+node_modules
+0_*

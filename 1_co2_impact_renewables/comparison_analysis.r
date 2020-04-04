@@ -1,14 +1,6 @@
 quartile_splits = c(0, 0.25, 0.5, 0.75, 1.1)
 conso_labels = c("base (Q1)", "offpeak1 (Q2)", "offpeak2 (Q3)", "peak (Q4)")
 wind_labels = c("still\n(Q1)", "windy\n(Q2)", "very windy\n(Q3)", "stormy\n(Q4)")
-prod_type_color = c("chocolate4", "gray48", "dodgerblue3", "green4",
-                    "firebrick", "darkorange", "darkorchid3", "hotpink1",
-                    "gray48", "gray22", "firebrick4"
-                    )
-names(prod_type_color) = c("biomass", "fossil", "hydro", "nuclear",
-                           "pumped_storage", "solar", "trade", "wind",
-                           "oil", "coal", "gas")
-
 
 data2 = data %>%
   group_by(season) %>%

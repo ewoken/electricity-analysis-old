@@ -4,10 +4,11 @@ Get data from RTE and do some analysis on grid data
 
 ## Get started
 
-To get data and generate figures
+Download all .csv needed in 0_data and make output directories
 ```bash
 ./init.sh
-Rscript index.r
 ```
+
+Go to a numeroted folder and launch ```RScript index.r``` to generate figures.
 
 I recommend to use [RStudio](https://www.rstudio.com/).
