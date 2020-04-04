@@ -1,66 +1,68 @@
-library(tidyverse)
-library(lubridate)
+suppressMessages(library(tidyverse))
+suppressMessages(library(lubridate))
 
-# here all constants
-years = seq(2012, 2018)
-ALL_YEARS = 1
-ALL_MONTHS = 13
-SUMMER = 14
-WINTER = 15
+Sys.setlocale(locale = 'en_US')
 
-# theme configuration for plots
+YEARS = seq(2012, 2019)
+MW_TO_KWH = 500
+
+ADEME_GHG_FACTORS = c(0.006, 0.006, 0.013, 0.055, 0.418, 0.494, 0.73, 1.06)
+names(ADEME_GHG_FACTORS) = c('hydro', 'nuclear', 'wind', 'solar', 'gas', 'bioenergies', 'oil', 'coal')
+
+IPCC_GHG_FACTORS = c(0.024, 0.012, 0.011, 0.045, 0.490, 0.230, 0.65, 0.82)
+names(IPCC_GHG_FACTORS) = c('hydro', 'nuclear', 'wind', 'solar', 'gas', 'bioenergies', 'oil', 'coal')
+
+IMPORT_GHG_FACTOR = 0.420
+IMPORT_MARG_GHG_FACTOR = 1.06
+
 plotTheme = theme_set(theme_bw())
 plotTheme = plotTheme +
-  theme(axis.title.x = element_text(vjust = -2)) +
+    theme(axis.title.x = element_text(vjust = -2)) +
     theme(axis.title.y = element_text(angle = 90, vjust = 2)) +
     theme(plot.title = element_text(size = 15, vjust = 3)) +
-    theme(plot.margin = unit(c(1, 0.5, 0.5, 1), "cm"))
+    theme(plot.margin = unit(c(1, 0.5, 0.5, 1), 'cm'))
 theme_set(plotTheme)
 
-# compute to which season a date belongs to
-get_season = function(date, year) {
-  summer_start = make_datetime(year, 04, 30, 23)
-  summer_end = make_datetime(year, 09, 30, 23)
-  if (summer_start <= date & date <= summer_end) {
-    return("summer")
-  }
-  return("winter")
-}
+annual_use = read_csv(
+    'data/annual_use.csv',
+    col_types = cols(
+        week_index = col_double(),
+        industry_energy = col_double(),
+        heating = col_double(),
+        air_conditioning = col_double(),
+        others = col_double(),
+        lighting = col_double(),
+        hot_water = col_double(),
+        cooking = col_double(),
+        grid_loss = col_double(),
+        electric_vehicules = col_double()
+    )
+)
+january_typical_use = read_csv(
+    'data/january_typical_use.csv',
+    col_types = cols(
+        weekday = col_double(),
+        hour = col_double(),
+        grid_loss = col_double(),
+        industry_energy = col_double(),
+        heating = col_double(),
+        air_conditioning = col_double(),
+        others = col_double(),
+        lighting = col_double(),
+        hot_water = col_double(),
+        cooking = col_double(),
+        electric_vehicules = col_double()
+    )
+)
 
-get_period_label = function(year, season) {
-  small_season = ifelse(season == "summer", "S", "W")
-  return(paste(year - 2000, small_season, sep=" "))
-}
-
-season_from_month = function(month) {
-  return(ifelse(month == SUMMER, "summer", "winter"))
-}
-
-# compute to which season year a date belongs to
-# ex: 01/12/2015 is in winter 2015
-# ex: 01/03/2016 is in winter 2015
-get_season_year = function(date, year) {
-  summer_start = make_datetime(year, 04, 30, 23)
-  if (date <= summer_start) {
-    return(year - 1)
-  }
-
-  return(year)
-}
-
-# gather all data and put it in a tibble frame
-get_all_data = function() {
-  data = tibble()
-
-  for (year in years) {
-    year_data = read_delim(paste("./data/", year, ".csv", sep=""),
-      delim = ";",
-      col_types = cols(
+get_year_data = function(country, year) {
+  suppressWarnings((year_data = read_delim(paste('./_data/', country, '/', year, '.csv', sep=''),
+    delim = ';',
+    col_types = cols(
         perimetre = col_skip(),
         nature = col_skip(),
-        date = col_skip(),
         heure = col_skip(),
-        date_heure = col_datetime(format = "%Y-%m-%dT%H:%M:%S%z"),
+        date_heure = col_datetime(format = '%Y-%m-%dT%H:%M:%S%z'),
         prevision_j1 = col_skip(),
         prevision_j = col_skip(),
         taux_co2 = col_skip(),
@@ -69,92 +71,227 @@ get_all_data = function() {
         ech_comm_italie = col_skip(),
         ech_comm_suisse = col_skip(),
         ech_comm_allemagne_belgique = col_skip(),
-        fioul_tac = col_skip(),
-        fioul_cogen = col_skip(),
-        fioul_autres = col_skip(),
-        gaz_tac = col_skip(),
-        gaz_cogen = col_skip(),
-        gaz_ccg = col_skip(),
-        gaz_autres = col_skip(),
-        hydraulique_fil_eau_eclusee = col_skip(),
-        hydraulique_lacs = col_skip(),
-        hydraulique_step_turbinage = col_skip(),
-        bioenergies_dechets = col_skip(),
-        bioenergies_biomasse = col_skip(),
-        bioenergies_biogaz = col_skip()
-      )
+        fioul_tac = col_number(),
+        fioul_cogen = col_number(),
+        fioul_autres = col_number(),
+        gaz_tac = col_number(),
+        gaz_cogen = col_number(),
+        gaz_ccg = col_number(),
+        gaz_autres = col_number(),
+        hydraulique_fil_eau_eclusee = col_number(),
+        hydraulique_lacs = col_number(),
+        hydraulique_step_turbinage = col_number(),
+        bioenergies_dechets = col_number(),
+        bioenergies_biomasse = col_number(),
+        bioenergies_biogaz = col_number()
+    ),
+    )))
+    year_data = rename(year_data,
+        datetime = date_heure,
+        conso = consommation,
+        physical_flow = ech_physiques,
+        coal = charbon,
+
+        oil = fioul,
+        oil_turbine = fioul_tac,
+        oil_cogen = fioul_cogen,
+        oil_others = fioul_autres,
+
+        gas = gaz,
+        gas_cogen = gaz_cogen,
+        gas_ccg = gaz_ccg,
+        gas_turbine = gaz_tac,
+        gas_others = gaz_autres,
+
+        nuclear = nucleaire,
+
+        wind = eolien,
+        solar = solaire,
+
+        hydro = hydraulique,
+        hydro_pumped_storage = pompage,
+        hydro_run_of_river = hydraulique_fil_eau_eclusee,
+        hydro_lake = hydraulique_lacs,
+        hydro_pumped_discharge = hydraulique_step_turbinage,
+
+        waste = bioenergies_dechets,
+        biomass = bioenergies_biomasse,
+        biogas = bioenergies_biogaz
     )
-    year_data = filter(year_data, !is.na(consommation))
-    data = bind_rows(data, year_data)
-  }
+    year_data = filter(year_data, !is.na(conso), minute(datetime) != 15, minute(datetime) != 45)
+    year_data = year_data %>%
+        mutate(solar = if_else(solar > 0, solar, 0)) %>%
+        mutate(coal = if_else(coal > 0, coal, 0)) %>%
+        mutate(gas_ccg = if_else(gas_ccg > 0, gas_ccg, 0)) %>%
+        mutate(gas_turbine = if_else(gas_turbine > 0, gas_turbine, 0)) %>%
+        mutate(oil_turbine = if_else(oil_turbine > 0, oil_turbine, 0))
 
-  data = rename(data,
-    "date"="date_heure",
-    "conso"="consommation",
-    "oil"="fioul",
-    "coal"="charbon",
-    "gas"="gaz",
-    "nuclear"="nucleaire",
-    "wind"="eolien",
-    "solar"="solaire",
-    "hydro"="hydraulique",
-    "pumped_storage"="pompage",
-    "biomass"="bioenergies",
-    "trade"="ech_physiques"
-  )
-
-  data = mutate(data, prod = (coal + gas + hydro + nuclear + oil + solar + wind + biomass))
-
-  # emissions for the given half-hour slot in kg
-  # all emissions factor are in kg CO2eq per kWh
-  data = mutate(data, co2_kg = (
-      coal * 1.06 +
-      gas * 0.418 +
-      hydro * 0.006 +
-      nuclear * 0.006 +
-      oil * 0.73 +
-      solar * 0.055 +
-      wind * 0.013 +
-      biomass * 0.494
-    ) * 500
-  )
-
-  # emissions rate in tonnes of CO2eq per hour
-  data = mutate(data, co2_t_h = co2_kg / 500)
-
-  # emission factor of production for the given slot
-  data = mutate(data, co2_kg_kwh = co2_kg / (prod * 500))
-  data = mutate(data, fossil = coal + oil + gas)
-  data = mutate_at(data, vars(solar), ~ pmax(., 0))
-  data = mutate(data, new_renewables = wind + solar)
-  data = mutate(data, year = year(date))
-  data = mutate(data, month = month(date))
-  data = mutate(data, month_label = month(date, TRUE, TRUE, locale="en_US"))
-  data = mutate(data, season = mapply(get_season, date, year))
-  data = mutate(data, season_year = mapply(get_season_year, date, year))
-
-  installed_capacities = read_delim("./data/installed_capacities.csv",
-    delim=";",
-    col_types=cols(
-      "annee"=col_integer()
-    )
-  )
-  installed_capacities = rename(installed_capacities,
-    "year"="annee",
-    "fossils_capacities"="parc_thermique_fossile",
-    "oil_capacities"="parc_fioul",
-    "coal_capacities"="parc_charbon",
-    "gas_capacities"="parc_gaz",
-    "hydro_capacities"="parc_hydraulique",
-    "nuclear_capacities"="parc_nucleaire",
-    "solar_capacities"="parc_solaire",
-    "wind_capacities"="parc_eolien",
-    "biomass_capacities"="parc_bioenergie"
-  )
-  data = left_join(data, select(installed_capacities, year, solar_capacities, wind_capacities))
-
-  data = mutate(data, wind_load_factor = wind / wind_capacities)
-  data = mutate(data, solar_load_factor = solar / solar_capacities)
-
-  return(data)
+    year_data
 }
+
+add_installed_capacities = function(data, country) {
+    installed_capacities = read_delim(
+        paste('./_data/', country, '/installed_capacities.csv', sep=''),
+        delim=';',
+        col_types=cols(
+            'annee'=col_integer()
+        )
+    )
+    installed_capacities = rename(installed_capacities,
+        year = annee,
+        fossils_capacities = parc_thermique_fossile,
+        oil_capacities = parc_fioul,
+        coal_capacities = parc_charbon,
+        gas_capacities = parc_gaz,
+        hydro_capacities = parc_hydraulique,
+        nuclear_capacities = parc_nucleaire,
+        solar_capacities = parc_solaire,
+        wind_capacities = parc_eolien,
+        biomass_capacities = parc_bioenergie
+    )
+    data = left_join(data, select(installed_capacities, year, solar_capacities, wind_capacities), by = 'year')
+    data
+}
+
+add_temperatures = function(data, country) {
+    temperatures = read_delim(
+        paste('./_data/', country, '/temperatures.csv', sep=''),
+        delim=';',
+        col_types = cols(
+            date = col_date(format = ''),
+            pic_journalier_consommation = col_double(),
+            temperature_moyenne = col_double(),
+            temperature_reference = col_double()
+        )
+    )
+    temperatures = rename(temperatures,
+        day_peak = pic_journalier_consommation,
+        mean_temperature = temperature_moyenne,
+        reference_temperature = temperature_reference
+    )
+    data = left_join(data, temperatures, by = 'date')
+    data
+}
+
+get_country_data = function(country) {
+    data = tibble()
+
+    for (year in YEARS) {
+        year_data = get_year_data(country, year)
+        data = bind_rows(data, year_data)
+    }
+    data = data %>%
+        mutate(year = year(date)) %>% # TODO deal with timeslot
+        add_installed_capacities(country) %>%
+        add_temperatures(country) %>%
+        filter(year < 2020) # TODO
+    data
+}
+
+add_import_export = function(data) {
+    data = mutate(data, import = if_else(physical_flow > 0, physical_flow, 0))
+    data = mutate(data, export = if_else(physical_flow < 0, -physical_flow, 0))
+    data
+}
+
+add_prod = function(data) {
+    data = mutate(data, prod = (coal + gas + hydro + nuclear + oil + solar + wind + bioenergies))
+    data
+}
+
+add_co2_kg = function(data, ghg_factors, energy_factor = MW_TO_KWH) {
+    data = data %>%
+        mutate(co2_kg = 0) %>%
+        add_prod()
+
+    # we sum here emissions for each type of production
+    for (prod_type in names(ghg_factors)) {
+        data[['co2_kg']] = data[['co2_kg']] +
+            data[[prod_type]] * energy_factor * ghg_factors[prod_type]
+    }
+
+    # then we compute carbon intensity
+    data = data %>%
+        mutate(co2_kg_kwh = co2_kg / (prod * energy_factor))
+    data
+}
+
+add_month = function(data) {
+    data = data %>%
+        mutate(month = month(date)) %>%
+        mutate(month_label = month(date, TRUE, TRUE, locale='en_US'))
+    data
+}
+
+add_season = function(data) {
+    data = data %>%
+        add_month() %>%
+        mutate(season = if_else(month >= 5 && month < 10, 'summmer', 'winter'))
+    data
+}
+
+add_mixin_conso_co2_kg = function(data, ghg_factors, import_ghg_factor = IMPORT_GHG_FACTOR) {
+    data = data %>%
+        add_co2_kg(ghg_factors) %>%
+        add_import_export() %>%
+        add_prod() %>%
+        mutate(
+            export_co2_kg = (co2_kg / prod) * export,
+            import_co2_kg = import * MW_TO_KWH * import_ghg_factor,
+            conso_co2_kg = co2_kg - export_co2_kg + import_co2_kg,
+
+            conso_co2_kg_kwh = conso_co2_kg / ((conso - hydro_pumped_storage) * MW_TO_KWH),
+            export_co2_kg_kwh = export_co2_kg / (export * MW_TO_KWH)
+        )
+    data
+}
+
+add_marginal_export_dispatch = function(data) {
+    data = data %>%
+        mutate(
+            remaining_export = export,
+            export_ccg = if_else(remaining_export - gas_ccg < 0, remaining_export, gas_ccg),
+            remaining_export = if_else(remaining_export - gas_ccg < 0, 0, remaining_export - gas_ccg),
+
+            export_coal = if_else(remaining_export - coal < 0, remaining_export, coal),
+            remaining_export = if_else(remaining_export - coal < 0, 0, remaining_export - coal),
+
+            conso_coal = coal - export_coal,
+            conso_ccg = gas_ccg - export_ccg,
+        )
+    data
+}
+
+add_marginal_export_conso_co2_kg = function(data, ghg_factors, import_ghg_factor = IMPORT_MARG_GHG_FACTOR) {
+    data = data %>%
+        add_co2_kg(ghg_factors) %>%
+        add_import_export() %>%
+        add_marginal_export_dispatch() %>%
+        mutate(
+            remaining_co2_kg = (
+                conso_coal * ghg_factors['coal'] +
+                (conso_ccg + gas_cogen + gas_turbine + gas_others) * ghg_factors['gas'] +
+                hydro * ghg_factors['hydro'] +
+                nuclear * ghg_factors['nuclear'] +
+                oil * ghg_factors['oil'] +
+                solar * ghg_factors['solar'] +
+                wind * ghg_factors['wind'] +
+                bioenergies * MW_TO_KWH * ghg_factors['bioenergies']
+            ),
+            export_co2_kg =
+                export_coal * MW_TO_KWH * ghg_factors['coal'] +
+                export_ccg * MW_TO_KWH * ghg_factors['gas'] +
+                remaining_co2_kg / ((prod - export_ccg - export_coal)) * remaining_export,
+            import_co2_kg = import * MW_TO_KWH * import_ghg_factor,
+            conso_co2_kg = co2_kg - export_co2_kg + import_co2_kg,
+
+            export_co2_kg_kwh = export_co2_kg / (export * MW_TO_KWH),
+            conso_co2_kg_kwh = conso_co2_kg / ((conso - hydro_pumped_storage) * MW_TO_KWH)
+        )
+
+    data
+}
+
+
+
+
