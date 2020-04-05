@@ -1,10 +1,8 @@
-source('./install.r')
-library(tidyverse)
-library(lubridate)
-library(latex2exp)
+suppressMessages(library(tidyverse))
+suppressMessages(library(lubridate))
 
 YEARS = seq(2012, 2019)
-ADEME_GHG_FACTORS = c(0.006, 0.006, 0.0013, 0.055, 0.418, 0.494, 0.73, 1.06)
+ADEME_GHG_FACTORS = c(0.006, 0.006, 0.013, 0.055, 0.418, 0.494, 0.73, 1.06)
 names(ADEME_GHG_FACTORS) = c('hydro', 'nuclear', 'wind', 'solar', 'gas', 'bioenergies', 'oil', 'coal')
 
 plotTheme = theme_set(theme_bw())
@@ -12,11 +10,11 @@ plotTheme = plotTheme +
     theme(axis.title.x = element_text(vjust = -2)) +
     theme(axis.title.y = element_text(angle = 90, vjust = 2)) +
     theme(plot.title = element_text(size = 15, vjust = 3)) +
-    theme(plot.margin = unit(c(1, 0.5, 0.5, 1), "cm"))
+    theme(plot.margin = unit(c(1, 0.5, 0.5, 1), 'cm'))
 theme_set(plotTheme)
 
 get_year_data = function(country, year) {
-    year_data = read_delim(paste('./_data/', country, '/', year, '.csv', sep=''),
+  suppressWarnings((year_data = read_delim(paste('./_data/', country, '/', year, '.csv', sep=''),
        delim = ';',
        col_types = cols(
            perimetre = col_skip(),
@@ -45,8 +43,7 @@ get_year_data = function(country, year) {
            bioenergies_biomasse = col_number(),
            bioenergies_biogaz = col_number()
        ),
-
-    )
+    )))
     year_data = rename(year_data,
       datetime = date_heure,
       conso = consommation,
@@ -103,21 +100,27 @@ add_installed_capacities = function(data, country) {
       wind_capacities = parc_eolien,
       biomass_capacities = parc_bioenergie
     )
-    data = left_join(data, select(installed_capacities, year, solar_capacities, wind_capacities))
+    data = left_join(data, select(installed_capacities, year, solar_capacities, wind_capacities), by = 'year')
     data
 }
 
 add_temperatures = function(data, country) {
     temperatures = read_delim(
       paste('./_data/', country, '/temperatures.csv', sep=''),
-      delim=';'
+      delim=';',
+      col_types = cols(
+        date = col_date(format = ""),
+        pic_journalier_consommation = col_double(),
+        temperature_moyenne = col_double(),
+        temperature_reference = col_double()
+      )
     )
     temperatures = rename(temperatures,
-        'day_peak'='pic_journalier_consommation',
-        'mean_temperature'='temperature_moyenne',
-        'reference_temperature'='temperature_reference'
+        day_peak = pic_journalier_consommation,
+        mean_temperature = temperature_moyenne,
+        reference_temperature = temperature_reference
     )
-    data = left_join(data, temperatures)
+    data = left_join(data, temperatures, by = 'date')
     data
 }
 
@@ -136,7 +139,7 @@ get_country_data = function(country) {
     data
 }
 
-add_imoort_export = function(data) {
+add_import_export = function(data) {
     data = mutate(data, import = if_else(trade > 0, trade, 0))
     data = mutate(data, export = if_else(trade < 0, trade, 0))
     data
@@ -147,8 +150,7 @@ add_prod = function(data) {
     data
 }
 
-add_co2_kg = function(data) {
-    ghg_factors = ADEME_GHG_FACTORS
+add_co2_kg = function(data, ghg_factors) {
     data = data %>%
         mutate(co2_kg = 0) %>%
         add_prod()
@@ -160,6 +162,4 @@ add_co2_kg = function(data) {
         mutate(co2_kg_kwh = co2_kg / prod / 500)
     data
 }
-
-
 

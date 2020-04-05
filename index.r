@@ -4,6 +4,8 @@ data = get_country_data('france')
 data = data %>%
     add_co2_kg()
 
+a = describe(data)
+
 ggplot(data, aes(x = paste(year), y = co2_kg_kwh)) +
     geom_boxplot(outlier.shape = NA) +
     scale_y_continuous(limits = c(0, NA)) +
