@@ -1,4 +1,4 @@
-source('./check_dependencies.r')
+source('./install.r')
 library(tidyverse)
 library(lubridate)
 library(latex2exp)
@@ -152,7 +152,7 @@ add_co2_kg = function(data) {
     data = data %>%
         mutate(co2_kg = 0) %>%
         add_prod()
-    
+
     for (prod_type in names(ghg_factors)) {
         data[['co2_kg']] = data[['co2_kg']] + data[[prod_type]] * ghg_factors[prod_type] * 500
     }
