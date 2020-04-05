@@ -1,12 +1,5 @@
 _*
 .DS_Store
-.Rproj.user
+.ipynb*
 .vscode
-data
 figures
-.Rhistory
-.RData
-*.Rproj
-*.png
-node_modules
-0_*
