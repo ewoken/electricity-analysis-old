@@ -1,8 +1,6 @@
 suppressMessages(library(tidyverse))
 suppressMessages(library(lubridate))
 
-Sys.setlocale(locale = 'en_US')
-
 YEARS = seq(2012, 2019)
 MW_TO_KWH = 500
 
