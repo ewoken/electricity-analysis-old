@@ -52,7 +52,7 @@ prod_by_types_graph = function(data, start_date, end_date, prod_type_order = PRO
     plot
 }
 
-monthly_production_graph = function(base_type_prod, monthly_type_prod) {
+monthly_graph = function(base_type_prod, monthly_type_prod, title = 'Base & monthly production') {
     options(warn=-1)
 
     # compute base prod in TWh
@@ -79,7 +79,7 @@ monthly_production_graph = function(base_type_prod, monthly_type_prod) {
         mutate(month_label = 'base')
 
     # bind all together
-    graph_data = monthly_all_prod %>%H
+    graph_data = monthly_all_prod %>%
         bind_rows(base_month)
 
     prod_types_colors = c(PROD_TYPES_COLORS, 'grey')
@@ -94,7 +94,7 @@ monthly_production_graph = function(base_type_prod, monthly_type_prod) {
         geom_col() +
         scale_fill_manual(values = prod_types_colors) +
         labs(
-            title = paste('Base & monthly production (', start_year, ' - ', end_year, ')', sep=''),
+            title = paste(title, ' (', start_year, ' - ', end_year, ')', sep=''),
             x = '',
             y = 'Production (TWh)',
             fill = 'Types',

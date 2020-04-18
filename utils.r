@@ -171,11 +171,33 @@ add_temperatures = function(data, country) {
     data
 }
 
+get_price_data = function(country, year) {
+    price_data = read_csv(
+        paste('./_data/', country, '/prices/', year, '.csv', sep=''),
+        col_types = cols(
+            date = col_character(),
+            start_hour = col_character(),
+            end_hour = col_skip(),
+            volume_mwh = col_skip()
+        )
+    ) %>%
+    mutate(datetime = ymd_hm(paste(date, 'T', start_hour, sep = ''))) %>%
+    select(-date, -start_hour)
+
+    price_data
+}
+
 get_country_data = function(country) {
     data = tibble()
 
     for (year in YEARS) {
         year_data = get_year_data(country, year)
+        price_data = get_price_data(country, year)
+
+        year_data = year_data %>%
+            left_join(price_data, by = 'datetime') %>%
+            mutate(price_euros_mwh = if_else(is.na(price_euros_mwh), lag(price_euros_mwh, order_by = datetime), price_euros_mwh))
+
         data = bind_rows(data, year_data)
     }
     data = data %>%
